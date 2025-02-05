@@ -50,8 +50,8 @@ static void describe(const struct iov_iter *iov_iter) {
     case ITER_IOVEC:
       pr_info("\tITER_IOVEC\n");
       for (i = 0; i < iov_iter->nr_segs; i++) {
-        pr_info("\tbase:%pS\tlen=%ld\n", iov_iter->iov[i].iov_base,
-                iov_iter->iov[i].iov_len);
+        pr_info("\tbase:%pS\tlen=%ld\n", iov_iter->__iov[i].iov_base,
+                iov_iter->__iov[i].iov_len);
       }
       break;
     case ITER_KVEC:
@@ -60,14 +60,17 @@ static void describe(const struct iov_iter *iov_iter) {
     case ITER_BVEC:
       pr_info("ITER_BVEC\n");
       break;
-    case ITER_PIPE:
-      pr_info("ITER_PIPE\n");
-      break;
     case ITER_DISCARD:
       pr_info("ITER_DISCARD\n");
       break;
-    defaut:
-      pr_info("Other\n");
+    case ITER_UBUF:
+      pr_info("ITER_UBUF\n");
+      break;
+    case ITER_FOLIOQ:
+      pr_info("ITER_FOLIOQ\n");
+      break;
+    case ITER_XARRAY:
+      pr_info("ITER_XARRAY\n");
       break;
   }
   pr_info("nr_segs:%ld\n", iov_iter->nr_segs);
@@ -75,22 +78,20 @@ static void describe(const struct iov_iter *iov_iter) {
 
 // This function is inspired on block/bio.c:bio_map_user_iov
 static void inspect_pages(struct iov_iter *iov_iter) {
-  int num_pages;
   struct page **pages;
   const void *to_free;
   struct iov_iter clone;
-  size_t len;
   int npages;
 
   // iov_iter_get_pages_alloc return a mapping to the first iov only
   // if we want to map all of then, we going to need to interate over it
-  // So we don't have an array of num_pages after the return of
+  // So we don't have an array of nmu_pages after the return of
   // iov_iter_get_pages_alloc as I tought it would be on the first place
-  num_pages = iov_iter_npages(iov_iter, INT_MAX);
+  unsigned int num_pages = iov_iter_npages(iov_iter, INT_MAX);
   pr_info("Total of pages:%d\n", num_pages);
 
   // We will clone it because we want to inspect the memory without affect the
-  // iterator There is no documentation but the return of dup_ite must be free
+  // iterator There is no documentation but the return of dup_iter must be free
   // by the user
   to_free = dup_iter(&clone, iov_iter, GFP_KERNEL);
 
@@ -98,9 +99,9 @@ static void inspect_pages(struct iov_iter *iov_iter) {
   // iov_iter_single_seg_count(&clone);
   // length;
 
-  len = iov_iter_count(&clone);
+  size_t len = iov_iter_count(&clone);
   pr_info("Total len=%ld\n", len);
-  while (len > 0) {
+  while (iov_iter_count(&clone)) {
     int i;
     size_t offs, bytes;
     char us[32] = {
@@ -109,16 +110,12 @@ static void inspect_pages(struct iov_iter *iov_iter) {
     int us_len = 0;
     // We are going to use maxsize = PAGE_SIZE, it means it will return at most
     // two pages
-    bytes = iov_iter_get_pages_alloc(&clone, &pages, PAGE_SIZE, &offs);
+    bytes = iov_iter_get_pages_alloc2(&clone, &pages, PAGE_SIZE, &offs);
     pr_info("\tpage size bytes:%ld\n", bytes);
     pr_info("\tpage offs:%ld\n", offs);
 
-    // We update how many bytes left to be mapped and advance the iterator
-    len -= bytes;
-    iov_iter_advance(&clone, bytes);
-
     // To be sure the actual number of pages,
-    // we must calculate if the data crossed a page bondary
+    // we must calculate if the data crossed a page boundary
     npages = DIV_ROUND_UP(offs + bytes, PAGE_SIZE);
     pr_info("\tnumber of pages for this mapping:%d\n", npages);
 
@@ -136,7 +133,7 @@ static void inspect_pages(struct iov_iter *iov_iter) {
 
       // As you will se the addr are not continuos here like they are on the userspace
       pr_info("\t\tkernel addr:%pS to %pS\n", myaddr, myaddr + n - 1);
-      pr_info("\t\tphysical addr:%llx to %llx\n",  virt_to_phys(myaddr), virt_to_phys(myaddr + n - 1));
+      pr_info("\t\tphysical addr:%llx to %llx\n",  slow_virt_to_phys(myaddr), slow_virt_to_phys(myaddr + n - 1));
 
       offs = 0;
       bytes -= n;
@@ -168,11 +165,10 @@ static void rw_work_fill_pages(struct rw_work *rw_work, struct iov_iter *iov_ite
   while (len > 0) {
     struct rw_page *rw_page = &rw_work->page[rw_work->num_pages];
 
-    rw_page->bytes = iov_iter_get_pages(iov_iter, &rw_page->page, PAGE_SIZE, 1, &rw_page->offs);
+    rw_page->bytes = iov_iter_get_pages2(iov_iter, &rw_page->page, PAGE_SIZE, 1, &rw_page->offs);
     len -= rw_page->bytes;
     rw_page->seek = seek;
     seek += rw_page->bytes;
-    iov_iter_advance(iov_iter, rw_page->bytes);
 
     rw_work->num_pages++;
     if (rw_work->num_pages == RW_MAX_PAGES) {
@@ -208,7 +204,7 @@ static void complete_read(struct work_struct *work)
 
   pr_info("delayed work %s\n", __func__);
   if (iocb && iocb->ki_complete) {
-    iocb->ki_complete(iocb, count, 0);
+    iocb->ki_complete(iocb, count);
     pr_info("delayed work called\n");
   }
   kfree(rw_work);
@@ -266,7 +262,7 @@ static void complete_write(struct work_struct *work)
 
   pr_info("delayed work %s\n", __func__);
   if (iocb && iocb->ki_complete) {
-    iocb->ki_complete(iocb, count, 0);
+    iocb->ki_complete(iocb, count);
     pr_info("delayed work called\n");
   }
   kfree(rw_work);
@@ -284,7 +280,7 @@ static ssize_t schedule_write_work(struct kiocb *iocb, struct iov_iter *from)
 }
 
 
-ssize_t sample_write_iter(struct kiocb *iocb, struct iov_iter *from) {
+static ssize_t sample_write_iter(struct kiocb *iocb, struct iov_iter *from) {
   size_t len = iov_iter_count(from);
 
   describe(from);
@@ -307,7 +303,6 @@ static const struct file_operations sample_fops = {
     .read_iter = sample_read_iter,
     .write_iter = sample_write_iter,
     .release = sample_close,
-    .llseek = no_llseek,
 };
 
 struct miscdevice sample_device = {
@@ -345,6 +340,6 @@ static void __exit misc_exit(void) {
 
 module_init(misc_init) module_exit(misc_exit)
 
-    MODULE_DESCRIPTION("Simple Misc Driver");
+MODULE_DESCRIPTION("Simple Misc Driver");
 MODULE_AUTHOR("Nick Glynn <n.s.glynn@gmail.com>");
 MODULE_LICENSE("GPL");

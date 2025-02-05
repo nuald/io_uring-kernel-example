@@ -24,11 +24,9 @@
 
 int sync_rw(int fd, struct iovec *iov, int iovcnt, int offset)
 {
-  size_t count;
-
   fprintf(stderr, "Performing sync RW\n");
 
-  count = preadv(fd, iov, iovcnt, offset);
+  ssize_t count = preadv(fd, iov, iovcnt, offset);
   if (count < 0) {
     fprintf(stderr, "Unable to preadv in /dev/rw_iter\n");
     return -1;
@@ -39,6 +37,7 @@ int sync_rw(int fd, struct iovec *iov, int iovcnt, int offset)
     fprintf(stderr, "Unable to pwritev in /dev/rw_iter\n");
     return -1;
   }
+  return 0;
 }
 
 int async_rw(int fd, struct iovec *iov, int iovcnt, int offset)
@@ -94,6 +93,7 @@ int async_rw(int fd, struct iovec *iov, int iovcnt, int offset)
   }
 
   io_uring_queue_exit(&ring);
+  return 0;
 }
 
 int main(int argc, const char *argv[]) {
@@ -110,9 +110,10 @@ int main(int argc, const char *argv[]) {
   }
 
   memset(cbuffer, 1, iovcnt * block_size);
+  char *cbuffer_ch = (char*)cbuffer;
   for (i = 0; i < iovcnt; i++) {
-    buffer[i] = cbuffer;
-    cbuffer += block_size;
+    buffer[i] = cbuffer_ch;
+    cbuffer_ch += block_size;
   }
 
   fd = open("/dev/rw_iter", O_RDWR);

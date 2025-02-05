@@ -1,6 +1,18 @@
+## Usage
 
+```
+make
+sudo insmod rw_iter.ko
+# Sync mode
+sudo ./main
+# Async (io_uring) mode
+sudo ./main 1
 
-References:
+# Verify with kernel messages
+sudo dmesg
+```
+
+## References
 
 * http://krishnamohanlinux.blogspot.com/2015/02/getuserpages-example.html
 * https://lwn.net/Articles/625077/
