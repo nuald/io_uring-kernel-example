@@ -1,15 +1,42 @@
 ## Usage
 
 ```
-make
-sudo insmod rw_iter.ko
+make module
+sudo rmmod target/rw_iter.ko
+sudo insmod target/rw_iter.ko
+
+make target/main
 # Sync mode
-sudo ./main
+sudo ./target/main
 # Async (io_uring) mode
-sudo ./main 1
+sudo ./target/main 1
 
 # Verify with kernel messages
 sudo dmesg
+```
+
+## Troubleshooting
+
+### liburing
+
+If liburing is out of sync, one may need to manually compile it.
+Assuming the checkout in the sibling directory:
+
+```
+cd ..
+git clone https://github.com/axboe/liburing.git
+cd -
+make -C ../liburing
+make target/main_upstream_liburing
+sudo ./target/main_upstream_liburing
+```
+
+### Valgrind
+
+On Archlinux, you may use Valgrind as:
+
+```
+sudo DEBUGINFOD_URLS="https://debuginfod.archlinux.org" valgrind ./target/main_upstream_liburing
 ```
 
 ## References

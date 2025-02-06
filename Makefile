@@ -2,14 +2,21 @@ CONFIG_MODULE_SIG=n
 
 obj-m += rw_iter.o
 
-all: main module
+.PHONY: module
+module: target/rw_iter.ko
 
-main: main.c
-	gcc -Wall -Wextra -pedantic -o main main.c -luring
+target/main: main.c | target
+	gcc -Wall -Wextra -pedantic -o "$@" main.c -luring
 
-module:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+target/main_upstream_liburing: main.c | target
+	gcc -I../liburing/src/include/ -L../liburing/src/ -Wall -Wextra -o "$@" main.c -luring
 
+target/rw_iter.ko: rw_iter.c | target
+	make -C /lib/modules/$(shell uname -r)/build MO=$(PWD)/target M=$(PWD) src=$(PWD) modules
+
+target:
+	mkdir -p "$@"
+
+.PHONY: clean
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
-
+	rm -rf $(BUILD_DIR)
